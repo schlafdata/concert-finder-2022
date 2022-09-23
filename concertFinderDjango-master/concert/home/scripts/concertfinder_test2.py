@@ -17,10 +17,12 @@ from concurrent import futures
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+import dateutil.parser
+from datetime import datetime
+nltk.download('averaged_perceptron_tagger')
 
 tagger = pycrfsuite.Tagger()
-tagger.open(r'/Users/johnschlafly/Desktop/concertFinderDjango-master/concert/home/scripts/crf.model')
-
+tagger.open(r'/Users/john.schlafly/Documents/concert-finder/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
 
 proxies = {
 }
@@ -244,44 +246,6 @@ def mapFilters(user):
 
     return [list(set(userLikes)),songCounts]
 
-# def mishScrape():
-#     mishQuery = requests.get('https://mishawaka.ticketforce.com/include/widgets/events/EventList.asp?category=&page=1', proxies = proxies, verify=False)
-#     mishJson = mishQuery.json()
-
-#     mishData = []
-#     for event in mishJson['swEvent']:
-#         headline = event['Event']
-#         desc = event['Description']
-#         date = event['PerformanceStart']
-#         id_ = event['upcomingInfo']['EventID']
-#         link = 'https://mishawaka.ticketforce.com/eventperformances.asp?evt={0}'.format(id_)
-#         pic = 'https://mishawaka.ticketforce.com/uplimage/' + event['Img_1']
-
-#         descSoup = BeautifulSoup(desc, 'html.parser')
-#         try:
-#             info = descSoup.find('span', {'style':'font-size: 18pt; color: #ff6600;'}).text
-#         except:
-#             try:
-#                 info = descSoup.find('span', {'style':'color: #ff6600;'}).text
-#             except:
-#                 info = headline
-
-#         res = (info, date,link, 'Mishawaka Amphitheatre', pic)
-#         mishData.append(res)
-
-#     mishFrame = pd.DataFrame(mishData)
-#     mishFrame.columns = ['Artist','Date','Link','Venue','picLink']
-#     mishFrame['Date'] = mishFrame['Date'].map(lambda x : x.split('T')[0])
-#     mishFrame['Date'] = pd.to_datetime(mishFrame['Date'])
-#     mishFrame['Date'] = mishFrame.Date + pd.Timedelta(days=-1)
-#     mishFrame['Date'] = mishFrame['Date'].map(lambda x : str(x))
-
-#     def splitArtists(row):
-#         return [x.strip() for x in re.split('w/|with|,|special guests', row) if x != ' ']
-#     mishFrame['FiltArtist'] = mishFrame['Artist'].map(splitArtists)
-
-#     return mishFrame
-
 
 
 
@@ -377,7 +341,7 @@ def cervantes_scrape():
 
     for x in range(1, 12):
 
-        response = requests.post(f'https://www.etix.com/ticket/json/calendar/organization/6122/2021/{x}', headers=headers, cookies=cookies, data=data)
+        response = requests.post(f'https://www.etix.com/ticket/json/calendar/organization/6122/2022/{x}', headers=headers, cookies=cookies, data=data)
         responses.append(response.json())
 
 
@@ -531,63 +495,45 @@ def cervantes_scrape():
 
 def gothic_scrape():
 
-    gothic = requests.get('https://www.gothictheatre.com/events', proxies = proxies, verify=False)
-    gothic_soup = BeautifulSoup(gothic.text, 'html.parser')
-    gothic_events = gothic_soup.findAll('body', {'id':"events_axs"})
+    headers = {
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'If-Modified-Since': 'Fri, 23 Sep 2022 17:50:13 GMT',
+        'If-None-Match': '0x8DA9D8C110E48E9',
+        'Origin': 'https://www.gothictheatre.com',
+        'Referer': 'https://www.gothictheatre.com/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+    }
+    
+    response = requests.get(f'https://aegwebprod.blob.core.windows.net/json/events/37/events.json', headers=headers).json()
+    data = response
+    df = pd.DataFrame(data['events'])
+    df[['presentedBy', 'presentedByText', 'headliners', 'headlinersText',
+           'supporting', 'supportingText', 'tour', 'eventTitle', 'eventTitleText']] = pd.json_normalize(df.title).apply(pd.Series)
 
-    gothic_artists = []
-    gothic_dates = []
-    links = []
+    df = df[['eventDateTime','headlinersText','supportingText','eventTitleText','eventRedirect']]
+    df['link'] = pd.json_normalize(df.eventRedirect)['url']
 
-    for x in gothic_events[0].findAll('a',{'title':"More Info"}):
-        gothic_artists.append(x.contents[0].strip())
+    def artitsts(x):  
+        return [x.headlinersText.split('-')[0], x.supportingText]
 
-    for x in gothic_events[0].findAll('span',{'class':"date"}):
-        gothic_dates.append(x.contents[2].strip())
+    df['venue'] = 'Gothic Theatre'
+    df['filtArtists'] = df.apply(artitsts, axis=1)
+    df = df[['headlinersText', 'eventDateTime','link','venue','filtArtists']]
+    df.columns = ['Artist','Date','Link','Venue','FiltArtist']
+    
+    df = df[['Artist','Date','FiltArtist','Link','Venue']]
+    
 
-    for x in gothic_events[0].findAll('a',{'class':'btn-tickets accentBackground widgetBorderColor secondaryColor tickets status_1'}):
-        links.append(x['href'])
+    return df
 
-    gothic_artists = list(filter(None, gothic_artists))
-
-    gothic_frame = pd.DataFrame(list(zip(gothic_artists, gothic_dates,links)))
-    gothic_frame['Venue'] = 'Gothic'
-    gothic_frame.columns = ['Artist','Date','Link','Venue']
-
-    def splitArtists(row):
-        return [x.strip() for x in re.split('Feat.|\s/', row) if (x is not None) & (x != '')]
-
-    gothic_frame['FiltArtist'] = gothic_frame['Artist'].map(splitArtists)
-
-
-    return gothic_frame
-
-
-def summitScrape():
-
-    today = datetime.today().strftime('%Y-%m-%d')
-    response = requests.get('https://www.summitdenver.com/api/EventCalendar/GetEvents?startDate=7/10/2021&endDate=7/1/2023&venueIds=246789&limit=20&offset=1&genre=&artist=&priceLevel=&offerType=STANDARD', proxies = proxies, verify=False)
-
-    summitResponse = response.json()
-    summitJson = json.loads(summitResponse)
-
-    summitInfo = []
-    for x in summitJson['result']:
-        artists = x['title']
-        dates = x['eventDate'].split(' ')[0]
-        venue = x['venueName']
-        link = x['ticketUrl']
-        picLink = x['eventImageLocation']
-        info = (artists, dates,link, venue,picLink)
-        summitInfo.append(info)
-
-    summitFrame = pd.DataFrame(summitInfo)
-    summitFrame.columns = ['Artist','Date','Link','Venue','picLink']
-    def splitArtists(row):
-        return [x.strip() for x in re.split(',|:|\*|-|\+|featuring| x| X', row) if (x is not None) & (x != '')]
-    summitFrame['FiltArtist'] = summitFrame['Artist'].map(splitArtists)
-
-    return summitFrame
 
 def bellyScrape():
 
@@ -649,44 +595,126 @@ def redRocksScrape():
 
 
 
-# def larimer_scrape():
+def larimer_scrape():
+    cookies = {
+        '_ga': 'GA1.2.604996994.1663967311',
+        '_gid': 'GA1.2.28816408.1663967311',
+    }
 
-#     larimer = requests.get('https://www.larimerlounge.com/calendar/', proxies=proxies, verify=False)
-#     larimer_soup = BeautifulSoup(larimer.text, 'html.parser')
-#     lamimer_calendar = larimer_soup.findAll('td')
+    headers = {
+        'authority': 'larimerlounge.com',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'accept-language': 'en-US,en;q=0.9',
+        # Requests sorts cookies= alphabetically
+        # 'cookie': '_ga=GA1.2.604996994.1663967311; _gid=GA1.2.28816408.1663967311',
+        'referer': 'https://larimerlounge.com/events/?view=month',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+    }
 
-#     larimer_artists = []
-#     for x in lamimer_calendar:
-#         artist = "\n".join([img['alt'] for img in x.find_all('img', alt=True)])
-#         larimer_artists.append(artist)
+    params = {
+        'view': 'list',
+    }
 
-#     larimer_dates = []
-#     for index, x in enumerate(lamimer_calendar):
-#         date = x.findAll('span', {'class':"value-title"})
-#         try:
-#             larimer_dates.append((index, str(date).split('<span class="value-title" title="')[1].split('T')[0]))
-#         except:
-#             pass
+    response = requests.get('https://larimerlounge.com/events/', params=params, cookies=cookies, headers=headers)
+    larimer_soup = BeautifulSoup(response.text, 'html.parser')
 
-#     artists = pd.DataFrame(larimer_artists).reset_index()
-#     dates = pd.DataFrame(larimer_dates)
-#     larimer_info = dates.merge(artists, left_on=0, right_on='index', how='inner')
-#     larimer_info = larimer_info[[1,'0_y']]
-#     larimer_info['Venue'] = 'Larimer Lounge'
 
-#     larimer_frame = larimer_info[larimer_info['0_y'] != '']
-#     larimer_frame.columns = ['Date','Artist','Venue']
-#     larimer_frame = larimer_frame[['Artist','Date','Venue']]
+    mydivs = larimer_soup.find_all("div", {"class": "col-12 eventWrapper rhpSingleEvent py-4 px-0"})
 
-#     def splitArtists(row):
-#         return [x.strip() for x in re.split('\\+|\(ft.|\(|\)', row) if (x is not None) & (x != '')]
+    eventLinks = []
+    for div in mydivs:
+        eventLink = div.find("a", {"class": "url"})
+        eventLinks.append(eventLink['href'])
 
-#     larimer_frame['FiltArtist'] = larimer_frame['Artist'].map(splitArtists)
+    eventDates = larimer_soup.find_all("div", {"id": "eventDate"})
+    eventDates = [x.text.strip('\n') for x in eventDates]
 
-#     larimer_frame['Link'] = 'No Link at this time, sorry!'
-#     larimer_frame = larimer_frame[['Artist','Date','FiltArtist','Link','Venue']]
+    eventTitle =larimer_soup.find_all("a", {"id": "eventTitle"}) 
+    eventTitles = [x.text.strip('\n').strip() for x in eventTitle]
 
-#     return larimer_frame
+
+    df = pd.DataFrame(list(zip(eventDates, eventTitles, eventLinks)))
+    df.columns = ['Date','Artist','Link']
+
+    df['Venue'] = 'Larimer Lounge'
+
+    def splitArtists(row):
+        return [x.strip() for x in re.split('\\+|\(ft.|\(|\)|w/', row) if (x is not None) & (x != '')]
+
+    df['FiltArtist'] = df['Artist'].map(splitArtists)
+
+    return df
+
+
+
+def mish_scrape():
+    
+    cookies = {
+        '_ga': 'GA1.2.1960140136.1663969719',
+        '_gid': 'GA1.2.1496379620.1663969719',
+        '_gat_gtag_UA_168961935_1': '1',
+        '_gat': '1',
+    }
+
+    headers = {
+        'authority': 'www.themishawaka.com',
+        'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9',
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        # Requests sorts cookies= alphabetically
+        # 'cookie': '_ga=GA1.2.1960140136.1663969719; _gid=GA1.2.1496379620.1663969719; _gat_gtag_UA_168961935_1=1; _gat=1',
+        'origin': 'https://www.themishawaka.com',
+        'referer': 'https://www.themishawaka.com/events/?view=month',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+        'x-requested-with': 'XMLHttpRequest',
+    }
+
+    data = {
+        'data[limit]': '500',
+        'data[display]': 'false',
+        'data[displayName]': '',
+        'data[genre]': '',
+        'data[venue]': '',
+        'data[month]': '',
+        'data[justAnnounced]': '',
+        'action': 'loadEtixMonthViewEventPageFn',
+    }
+
+    response = requests.post('https://www.themishawaka.com/wp-admin/admin-ajax.php', cookies=cookies, headers=headers, data=data)
+
+    df = pd.DataFrame(response.json()['data'])
+
+    def get_title(row):
+
+        row_soup = BeautifulSoup(row, 'html.parser')
+        return row_soup.find("div", {"class":"showtitle"}).text
+
+    df['show_title'] = df['title'].map(get_title)
+
+    df = df[['eventdate','show_title','url']]
+
+    df.columns = ['Date','Artist','Link']
+    df['Venue'] = 'Mishawakkkaaa'
+
+    def splitArtists(row):
+        return [x.strip() for x in re.split('w/|with|,|special guests', row) if x != ' ']
+    df['FiltArtist'] = df['Artist'].map(splitArtists)
+    
+    return df
 
 def missionScrape():
 
@@ -718,45 +746,226 @@ def missionScrape():
     return missionFrame
 
 
-# def nightOutScrape():
-#
-#     headers = {
-#         'authority': 'nightout.com',
-#         'sec-ch-ua': '" Not;A Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
-#         'accept': 'application/json',
-#         'authorization': 'OAuth t8poqrlce5r2vrw35pw5gfgfur5fj14',
-#         'sec-ch-ua-mobile': '?0',
-#         'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36',
-#         'origin': 'https://coclubs.com',
-#         'sec-fetch-site': 'cross-site',
-#         'sec-fetch-mode': 'cors',
-#         'sec-fetch-dest': 'empty',
-#         'referer': 'https://coclubs.com/',
-#         'accept-language': 'en-US,en;q=0.9',
-#     }
-#
-#     params = (
-#         ('starting', '1627797600'),
-#         ('ending', '1630907999'),
-#         ('details', 'preview'),
-#         ('organization_ids', '18858,17588,18860,18866,47457,52641,52730'),
-#     )
-#
-#     response = requests.get('https://nightout.com/api/events/', headers=headers, params=params)
-#
-#     #NB. Original query string below. It seems impossible to parse and
-#     #reproduce query strings 100% accurately so the one below is given
-#     #in case the reproduced version is not "correct".
-#     # response = requests.get('https://nightout.com/api/events/?starting=1627797600&ending=1630907999&details=preview&organization_ids=18858,17588,18860,18866', headers=headers)
-#
-#
-#     nightOut = response.json()
-#
-#     nightOutShows = [(x['organization']['name'],x['title'],x['links']['public'],x['start_time']) for x in nightOut]
-#
-#     nightOutFrame = pd.DataFrame(nightOutShows)
-#
-#     nightOutFrame.columns = ['Venue','Artist','Link','Date']
+def summitScrape():
+        cookies = {
+            'mt.v': '2.1008697111.1663964971406',
+            'mt.pc': '2.1',
+            '_gcl_au': '1.1.648872158.1663964971',
+            'mt.g.2f013145': '2.1008697111.1663964971406',
+            'QueueITAccepted-SDFrts345E-V3_livenation': 'EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9',
+            '_ga': 'GA1.2.1685932708.1663964972',
+            '_gid': 'GA1.2.1178063605.1663964972',
+            'seerses': 'e',
+            '_fbp': 'fb.1.1663964971923.327460204',
+            'seerid': '501ba304-019b-4a9b-9d2a-4c9a6dcef0a0',
+            '_scid': 'f95187c5-3865-4095-b16d-6be31db64700',
+            'TM_PIXEL': '{"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}',
+            '_dvs': '0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~',
+            '_dvp': '0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL',
+            '__gads': 'ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g',
+            '__gpi': 'UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw',
+            '_tt_enable_cookie': '1',
+            '_ttp': '64209cc8-8e39-463c-98b3-15ac31d0e559',
+            'qcSxc': '1663964976280',
+            '__qca': 'P0-920545329-1663964976277',
+            '_sctr': '1|1663912800000',
+            '_dd_s': 'logs=0&expire=1663966330634',
+        }
+
+        headers = {
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
+            # Requests sorts cookies= alphabetically
+            # 'Cookie': 'mt.v=2.1008697111.1663964971406; mt.pc=2.1; _gcl_au=1.1.648872158.1663964971; mt.g.2f013145=2.1008697111.1663964971406; QueueITAccepted-SDFrts345E-V3_livenation=EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9; _ga=GA1.2.1685932708.1663964972; _gid=GA1.2.1178063605.1663964972; seerses=e; _fbp=fb.1.1663964971923.327460204; seerid=501ba304-019b-4a9b-9d2a-4c9a6dcef0a0; _scid=f95187c5-3865-4095-b16d-6be31db64700; TM_PIXEL={"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}; _dvs=0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~; _dvp=0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL; __gads=ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g; __gpi=UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw; _tt_enable_cookie=1; _ttp=64209cc8-8e39-463c-98b3-15ac31d0e559; qcSxc=1663964976280; __qca=P0-920545329-1663964976277; _sctr=1|1663912800000; _dd_s=logs=0&expire=1663966330634',
+            'Referer': 'https://www.livenation.com/venue/KovZpZAFFt1A/summit-events',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
+        }
+
+
+        dfs = []
+        x=1
+
+        while True:
+            try:
+                params = {
+                        'discovery_id': 'KovZpZAFFt1A',
+                        'slug': 'summit',
+                        'pg': f'{x}',
+                        }
+
+                response = requests.get('https://www.livenation.com/_next/data/PAh682KIcCv6rz8ymDFCV/venue/KovZpZAFFt1A/summit-events.json', params=params, cookies=cookies, headers=headers)
+                df = pd.DataFrame(response.json()['pageProps']['queryResults']['page']['data']['getEvents'])
+                df['venueName'] = pd.json_normalize(df['venue'])['name']
+                df['artist_name'] = pd.json_normalize(pd.json_normalize(df['artists'])[0])['name']
+                df = df[['name','artist_name','venueName','url','event_date_timestamp_utc']]
+
+                dfs.append(df)
+                x+=1
+            except:
+                break
+
+
+        df = pd.concat(dfs)
+        df = df.drop_duplicates()
+        df['filtArtists'] = df['artist_name'].map(lambda x : [x])
+        df = df[['artist_name','event_date_timestamp_utc','url','venueName','filtArtists']]
+        df.columns = ['Artist','Date','Link','Venue','FiltArtist']
+
+def fillmoreScrape():    
+    cookies = {
+        'mt.v': '2.1008697111.1663964971406',
+        'mt.pc': '2.1',
+        '_gcl_au': '1.1.648872158.1663964971',
+        'mt.g.2f013145': '2.1008697111.1663964971406',
+        'QueueITAccepted-SDFrts345E-V3_livenation': 'EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9',
+        '_ga': 'GA1.2.1685932708.1663964972',
+        '_gid': 'GA1.2.1178063605.1663964972',
+        'seerses': 'e',
+        '_fbp': 'fb.1.1663964971923.327460204',
+        'seerid': '501ba304-019b-4a9b-9d2a-4c9a6dcef0a0',
+        '_scid': 'f95187c5-3865-4095-b16d-6be31db64700',
+        'TM_PIXEL': '{"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}',
+        '_dvs': '0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~',
+        '_dvp': '0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL',
+        '__gads': 'ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g',
+        '__gpi': 'UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw',
+        '_tt_enable_cookie': '1',
+        '_ttp': '64209cc8-8e39-463c-98b3-15ac31d0e559',
+        'qcSxc': '1663964976280',
+        '__qca': 'P0-920545329-1663964976277',
+        '_sctr': '1|1663912800000',
+        '_dd_s': 'logs=0&expire=1663966743763',
+    }
+
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        # Requests sorts cookies= alphabetically
+        # 'Cookie': 'mt.v=2.1008697111.1663964971406; mt.pc=2.1; _gcl_au=1.1.648872158.1663964971; mt.g.2f013145=2.1008697111.1663964971406; QueueITAccepted-SDFrts345E-V3_livenation=EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9; _ga=GA1.2.1685932708.1663964972; _gid=GA1.2.1178063605.1663964972; seerses=e; _fbp=fb.1.1663964971923.327460204; seerid=501ba304-019b-4a9b-9d2a-4c9a6dcef0a0; _scid=f95187c5-3865-4095-b16d-6be31db64700; TM_PIXEL={"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}; _dvs=0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~; _dvp=0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL; __gads=ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g; __gpi=UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw; _tt_enable_cookie=1; _ttp=64209cc8-8e39-463c-98b3-15ac31d0e559; qcSxc=1663964976280; __qca=P0-920545329-1663964976277; _sctr=1|1663912800000; _dd_s=logs=0&expire=1663966743763',
+        'Referer': 'https://www.livenation.com/venue/KovZpZAE6eJA/fillmore-auditorium-denver-events',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+    }
+
+
+    dfs = []
+    x=1
+
+    while True:
+        try:
+            params = {
+                        'discovery_id': 'KovZpZAE6eJA',
+                        'slug': 'fillmore-auditorium-denver',
+                        'pg': f'{x}',
+                    }
+
+            response = requests.get('https://www.livenation.com/_next/data/PAh682KIcCv6rz8ymDFCV/venue/KovZpZAE6eJA/fillmore-auditorium-denver-events.json', params=params, cookies=cookies, headers=headers)
+            df = pd.DataFrame(response.json()['pageProps']['queryResults']['page']['data']['getEvents'])
+            df['venueName'] = pd.json_normalize(df['venue'])['name']
+            df['artist_name'] = pd.json_normalize(pd.json_normalize(df['artists'])[0])['name']
+            df = df[['name','artist_name','venueName','url','event_date_timestamp_utc']]
+
+            dfs.append(df)
+            x+=1
+        except:
+            break
+
+
+    df = pd.concat(dfs)
+    df = df.drop_duplicates()
+    df['filtArtists'] = df['artist_name'].map(lambda x : [x])
+    df = df[['artist_name','event_date_timestamp_utc','url','venueName','filtArtists']]
+    df.columns = ['Artist','Date','Link','Venue','FiltArtist']
+    
+    return df
+
+def marquisScrape():
+    cookies = {
+        'mt.v': '2.1008697111.1663964971406',
+        'mt.pc': '2.1',
+        '_gcl_au': '1.1.648872158.1663964971',
+        'mt.g.2f013145': '2.1008697111.1663964971406',
+        'QueueITAccepted-SDFrts345E-V3_livenation': 'EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9',
+        '_ga': 'GA1.2.1685932708.1663964972',
+        '_gid': 'GA1.2.1178063605.1663964972',
+        'seerses': 'e',
+        '_fbp': 'fb.1.1663964971923.327460204',
+        'seerid': '501ba304-019b-4a9b-9d2a-4c9a6dcef0a0',
+        '_scid': 'f95187c5-3865-4095-b16d-6be31db64700',
+        'TM_PIXEL': '{"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}',
+        '_dvs': '0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~',
+        '_dvp': '0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL',
+        '__gads': 'ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g',
+        '__gpi': 'UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw',
+        '_tt_enable_cookie': '1',
+        '_ttp': '64209cc8-8e39-463c-98b3-15ac31d0e559',
+        'qcSxc': '1663964976280',
+        '__qca': 'P0-920545329-1663964976277',
+        '_sctr': '1|1663912800000',
+        '_dc_gtm_UA-60025178-7': '1',
+        '_dd_s': 'logs=0&expire=1663966913092',
+    }
+
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        # Requests sorts cookies= alphabetically
+        # 'Cookie': 'mt.v=2.1008697111.1663964971406; mt.pc=2.1; _gcl_au=1.1.648872158.1663964971; mt.g.2f013145=2.1008697111.1663964971406; QueueITAccepted-SDFrts345E-V3_livenation=EventId%3Dlivenation%26QueueId%3D00000000-0000-0000-0000-000000000000%26RedirectType%3Ddisabled%26IssueTime%3D1663964971%26Hash%3D92f145d6eb9bb8936d6fe4faff9c10ab44030480ccc03400ff9a92ed863bb2c9; _ga=GA1.2.1685932708.1663964972; _gid=GA1.2.1178063605.1663964972; seerses=e; _fbp=fb.1.1663964971923.327460204; seerid=501ba304-019b-4a9b-9d2a-4c9a6dcef0a0; _scid=f95187c5-3865-4095-b16d-6be31db64700; TM_PIXEL={"_dvs":"0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~","_dvp":"0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL"}; _dvs=0:l8exs5o6:ZfYW8FLrjjefI1XVBYuKuC_EGft7Kek~; _dvp=0:l8exs5o6:Kp~ctdS0kVJrMjeOE6FKeIvkPEUj~PeL; __gads=ID=ed7ca468e23f162c:T=1663964971:S=ALNI_MZHBrhTyNp3_6hre2WJ1wn9zT57-g; __gpi=UID=000008c7c3c7fe86:T=1663964971:RT=1663964971:S=ALNI_MYluCJUkNSfNs_YcdfbKuBTn5THuw; _tt_enable_cookie=1; _ttp=64209cc8-8e39-463c-98b3-15ac31d0e559; qcSxc=1663964976280; __qca=P0-920545329-1663964976277; _sctr=1|1663912800000; _dc_gtm_UA-60025178-7=1; _dd_s=logs=0&expire=1663966913092',
+        'Referer': 'https://www.livenation.com/venue/KovZpZAJeFkA/marquis-theater-events',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+    }
+
+
+    dfs = []
+    x=1
+
+    while True:
+        try:
+            params = {
+                'discovery_id': 'KovZpZAJeFkA',
+                'slug': 'marquis-theater',
+                'pg': f'{x}',
+            }
+
+            response = requests.get('https://www.livenation.com/_next/data/PAh682KIcCv6rz8ymDFCV/venue/KovZpZAJeFkA/marquis-theater-events.json', params=params, cookies=cookies, headers=headers)
+            df = pd.DataFrame(response.json()['pageProps']['queryResults']['page']['data']['getEvents'])
+            df['venueName'] = pd.json_normalize(df['venue'])['name']
+            df['artist_name'] = pd.json_normalize(pd.json_normalize(df['artists'])[0])['name']
+            df = df[['name','artist_name','venueName','url','event_date_timestamp_utc']]
+
+            dfs.append(df)
+            x+=1
+        except:
+            break
+
+
+    df = pd.concat(dfs)
+    df = df.drop_duplicates()
+    df['filtArtists'] = df['artist_name'].map(lambda x : [x])
+    df = df[['artist_name','event_date_timestamp_utc','url','venueName','filtArtists']]
+    df.columns = ['Artist','Date','Link','Venue','FiltArtist']
+    
+    return df
 
 
 def nightOutScrape():
@@ -776,7 +985,7 @@ def nightOutScrape():
         }
 
         params = (
-            ('access_token', '15c7b54a8f398e925302184edf1dba7b3bde298a'),
+            ('access_token', '4c430b032f9990fc657ab75481e7b6927ecbe1aa'),
             ('active_only', 'true'),
             ('privacy_type', 'public'),
             ('start_after', ''),
@@ -816,7 +1025,7 @@ def nightOutScrape():
         return concerts
 
 
-functions = ['cervantes_scrape()','bellyScrape()','redRocksScrape()','nightOutScrape()','missionScrape()','blue_bird_scrape()','ogden_scrape()','first_bank_scrape()','gothic_scrape()','summitScrape()']
+functions = ['mish_scrape()','larimer_scrape()','marquisScrape()','fillmoreScrape()','cervantes_scrape()','bellyScrape()','redRocksScrape()','nightOutScrape()','missionScrape()','blue_bird_scrape()','ogden_scrape()','first_bank_scrape()','gothic_scrape()','summitScrape()']
 
 
 result = []
@@ -827,6 +1036,7 @@ def sf_query(run):
             try:
                 result.append(eval(functions[run]))
             except:
+                print('error', functions[run])
                 web_hook = 'https://hooks.slack.com/services/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'
                 slack_msg = {'text':f'There was an error scrapiing (web app) -- {functions[run]}'}
                 requests.post(web_hook, data = json.dumps(slack_msg))
@@ -847,26 +1057,32 @@ def scrapeVenues():
 concertDict = defaultdict(list)
 def eventDict():
     denver_concerts = scrapeVenues()
+    denver_raw_concerts = denver_concerts
     for artists in denver_concerts.values:
-        if artists[4] is None:
+        try:
+            if artists[4] is None:
+                pass
+            else:
+                for artist in artists[4]:
+                    if artist.strip().upper() == '':
+                        pass
+                    else:
+                        concertDict[artist.strip().upper()].append(artists[0])
+                        concertDict[artist.strip().upper()].append(artists[1])
+                        concertDict[artist.strip().upper()].append(artists[3])
+                        concertDict[artist.strip().upper()].append(artists[2])
+        except:
             pass
-        else:
-            for artist in artists[4]:
-                if artist.strip().upper() == '':
-                    pass
-                else:
-                    concertDict[artist.strip().upper()].append(artists[0])
-                    concertDict[artist.strip().upper()].append(artists[1])
-                    concertDict[artist.strip().upper()].append(artists[3])
-                    concertDict[artist.strip().upper()].append(artists[2])
-    return denver_concerts
+    return denver_concerts, denver_raw_concerts
 
 
 
 def findMatches(user):
 
 
-    denver_concerts = eventDict()
+    denver_concerts = eventDict()[0]
+    denver_raw_concerts = eventDict()[1]
+    
     userLikes = mapFilters(user)
 
     matchResults = []
@@ -886,7 +1102,8 @@ def findMatches(user):
     matches = pd.DataFrame(matchResults)
     matches.columns = ['Artist','Date','Venue','Caused_By','Link']
     matches = matches.drop_duplicates()
-    matches['Date'] = pd.to_datetime(matches['Date'])
+    matches['Date'] = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
+    
     matches = matches.groupby(['Artist', 'Date','Venue','Link']).agg({'Caused_By': lambda x: ', '.join(x)}).sort_values('Date').reset_index()
 
     def nameLink(row):
@@ -918,12 +1135,15 @@ def findMatches(user):
     countFrame['level_0'] = countFrame['level_0'].map(lambda x : int(x)+1)
 
 
-
     matches.columns = ['Event','Date','Venue','Liked Artists']
-    matches.Date = matches.Date.map(lambda x: x.strftime('%m/%d/%Y') if pd.notnull(x) else '')
+    matches.Date = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
     matches = matches.reset_index()
     matches['index'] = matches['index'].map(lambda x : int(x)+1)
 
+    matches['Date'] = pd.to_datetime(matches['Date'])
+    matches.loc[matches['Date'] > pd.Timestamp(datetime.now()), 'Date']
+
     matches.style.set_properties(subset=['Date'], **{'width': '100px'})
+    
 
     return [matches, countFrame]
