@@ -25,7 +25,7 @@ SECRET_KEY = 'dggzud@olu!dub82*xs21c8#!#k_o+0j_if3!ljo6#_r0hld*o'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['schlafdata.pythonanywhere.com','127.0.0.1']
+ALLOWED_HOSTS = ['ec2-52-91-175-54.compute-1.amazonaws.com']
 
 
 # Application definition
@@ -121,7 +121,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/2.2/howto/static-files/
 
 
-STATIC_ROOT = "/Users/jschlafly/concert_finder/concertFinderDjango/concert/home/static"
+STATIC_ROOT = "/home/ubuntu/concert-finder-2022/concertFinderDjango-master/concert/home/static"
 
 
 STATIC_URL = '/static/'

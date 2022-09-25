@@ -1,3 +1,6 @@
+from selenium.webdriver.common.by import By
+import time
+from seleniumwire import webdriver
 import pycrfsuite
 # import pycrfsuite
 import pandas as pd
@@ -22,7 +25,7 @@ from datetime import datetime
 nltk.download('averaged_perceptron_tagger')
 
 tagger = pycrfsuite.Tagger()
-tagger.open(r'/Users/john.schlafly/Documents/concert-finder/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
+tagger.open(r'/home/ubuntu/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
 
 proxies = {
 }
@@ -576,7 +579,7 @@ def bellyScrape():
 
 def redRocksScrape():
 
-    red_rocks = requests.get('https://www.redrocksonline.com/wp-json/clique/v1/get_calendar_events_range?start=2021-06-27T00%3A00%3A00&end=2021-08-01T00%3A00%3A00&timeZone=America%2FDenver')
+    red_rocks = requests.get('https://www.redrocksonline.com/wp-json/clique/v1/get_calendar_events_range?start=2022-09-01T00%3A00%3A00&end=2023-08-01T00%3A00%3A00&timeZone=America%2FDenver')
 
     redRocksJson = red_rocks.json()
 
@@ -594,6 +597,143 @@ def redRocksScrape():
     return redFrame
 
 
+def black_box_scrape():    
+    options = webdriver.ChromeOptions()
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    # options.add_argument("--auto-open-devtools-for-tabs")
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36")
+    driver = webdriver.Chrome(options=options)
+    driver.get('https://blackboxdenver.co/events/')
+
+    time.sleep(3)
+
+    elems = [elem for elem in driver.find_elements(By.CSS_SELECTOR, "a") if 'event-link mb-2 is-blackbox' in elem.get_attribute('class')]
+    elems[0].click()
+
+    time.sleep(3)
+
+    lnks=driver.find_elements(By.TAG_NAME, "a")
+
+    def try_href(x):
+        try:
+            if 'https://blackboxdenver.co/events/' in x[0]:
+                return x[1]
+        except:
+            return
+
+    elem = [(x[0],x[1]) for x in [(try_href(x),x[0]) for x in [(x.get_attribute('href'),x) for x in lnks]] if x[0] is not None]
+    elem[1][0].click()
+
+    time.sleep(5)
+
+    # Access requests via the `requests` attribute
+    for request in driver.requests:
+
+        if 'https://blackboxdenver.co/api/events?access_token' in request.url:
+            resp = requests.get(request.url)
+
+    def try_event(x):
+        try:
+            return x['Event']
+        except:
+            pass
+    driver.quit()    
+    df = pd.DataFrame([x['Event'] for x in resp.json()])
+    df = df[['start','name','location','tickets_url']]
+
+    def try_split(x):
+        try:
+
+            return x.strip()
+        except:
+            return
+
+    def splitArtists(row):
+        return [try_split(x) for x in re.split('All Night|presents|:|w/|-|&|\(|\)|\+|\*|\/', row) if x not in ['',' ']]
+    df['FiltArtist'] = df['name'].map(splitArtists)
+
+    df.columns = ['Date','Artist','Venue','Link','FiltArtist']
+
+    df = df[['Date','Artist','Link','Venue','FiltArtist']]
+    
+    return df
+
+def meow_scrape():
+    cookies = {
+        'ajs_anonymous_id': '3192e4ec-2cbe-465e-b680-e2e524713e0a',
+        '_gcl_au': '1.1.1487863936.1664075966',
+        '_fbp': 'fb.1.1664075965650.1283557068',
+        '_gid': 'GA1.2.1742054515.1664075966',
+        '_scid': '3613940c-7a88-46ed-818b-052948e5e45c',
+        '_tt_enable_cookie': '1',
+        '_ttp': '578b9715-ea70-4480-9cfa-74db6fe5cf96',
+        '__stripe_mid': 'da0ceb1d-0a6c-4771-8354-9e1fdc98b51b3ecd44',
+        '__stripe_sid': 'bbe0865d-e6cb-430b-9293-a1346c8d53d6d8043e',
+        '__hstc': '183241081.2675588f18c7db5d97d2732e318ab3ba.1664075965821.1664075965821.1664075965821.1',
+        'hubspotutk': '2675588f18c7db5d97d2732e318ab3ba',
+        '__hssrc': '1',
+        '_sctr': '1|1663999200000',
+        '_gat_UA-29796014-1': '1',
+        '_ga_9505BR5S4S': 'GS1.1.1664075965.1.1.1664076095.0.0.0',
+        '_ga': 'GA1.1.671179185.1664075966',
+        '_ga_YYTSRDQY6E': 'GS1.1.1664075965.1.1.1664076095.51.0.0',
+        '_uetsid': 'db94a2603c8011edb4dd854eca41a367',
+        '_uetvid': 'db94e0103c8011edab15479653cf1f7f',
+        '__hssc': '183241081.3.1664075965822',
+    }
+
+    headers = {
+        'authority': 'tickets.meowwolf.com',
+        'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9',
+        # Already added when you pass json=
+        # 'content-type': 'application/json',
+        # Requests sorts cookies= alphabetically
+        # 'cookie': 'ajs_anonymous_id=3192e4ec-2cbe-465e-b680-e2e524713e0a; _gcl_au=1.1.1487863936.1664075966; _fbp=fb.1.1664075965650.1283557068; _gid=GA1.2.1742054515.1664075966; _scid=3613940c-7a88-46ed-818b-052948e5e45c; _tt_enable_cookie=1; _ttp=578b9715-ea70-4480-9cfa-74db6fe5cf96; __stripe_mid=da0ceb1d-0a6c-4771-8354-9e1fdc98b51b3ecd44; __stripe_sid=bbe0865d-e6cb-430b-9293-a1346c8d53d6d8043e; __hstc=183241081.2675588f18c7db5d97d2732e318ab3ba.1664075965821.1664075965821.1664075965821.1; hubspotutk=2675588f18c7db5d97d2732e318ab3ba; __hssrc=1; _sctr=1|1663999200000; _gat_UA-29796014-1=1; _ga_9505BR5S4S=GS1.1.1664075965.1.1.1664076095.0.0.0; _ga=GA1.1.671179185.1664075966; _ga_YYTSRDQY6E=GS1.1.1664075965.1.1.1664076095.51.0.0; _uetsid=db94a2603c8011edb4dd854eca41a367; _uetvid=db94e0103c8011edab15479653cf1f7f; __hssc=183241081.3.1664075965822',
+        'origin': 'https://tickets.meowwolf.com',
+        'referer': 'https://tickets.meowwolf.com/events/denver/sacha-robotti/',
+        'sec-ch-ua': '"Google Chrome";v="105", "Not)A;Brand";v="8", "Chromium";v="105"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'sid': '580a434a-d7eb-4b65-accf-f902b8a5f16e',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+    }
+
+    json_data = {
+        'operationName': 'GetNonRecurringEvents',
+        'variables': {
+            'categories': [
+                'Music',
+            ],
+            'embed': [
+                'meta',
+                'venue_meta',
+                'event_session',
+                'venue',
+                'ticket_group',
+                'ticket_type',
+                'seller',
+            ],
+            'sellerId': '017a7f54-e443-a261-3c55-46ef4d921efb',
+        },
+        'query': 'query GetNonRecurringEvents($eventId: ID, $eventSlug: String, $sellerId: ID!, $categories: [EventCategory!] = [Music, Community, Workshops], $embed: [EventEmbed] = [meta, venue_meta, event_session, venue, ticket_group, ticket_type, seller]) {\n  nonRecurringEvents(\n    eventId: $eventId\n    eventSlug: $eventSlug\n    categories: $categories\n    sellerId: $sellerId\n    embed: $embed\n  ) {\n    __typename\n    ...SellerAndVenue\n    events {\n      __typename\n      id\n      venueId\n      sellerId\n      title\n      slug\n      category\n      description\n      summary\n      subtitle\n      ...MetaDataDetails\n      ...TimeslotsDetails\n      ...TicketCategoriesDetails\n    }\n  }\n}\n\nfragment SellerAndVenue on NonRecurringEvents {\n  __typename\n  seller {\n    __typename\n    id\n    name\n    timezone\n    meta {\n      __typename\n      metakey\n      value\n    }\n  }\n  venues {\n    __typename\n    id\n    title\n    description\n    address\n    meta {\n      __typename\n      metakey\n      value\n    }\n  }\n}\n\nfragment TicketCategoriesDetails on EventWithTimeslotsAndMeta {\n  __typename\n  ticketCategories {\n    __typename\n    id\n    eventId\n    title\n    maxPerOrder\n    capacity\n    salesWindow {\n      __typename\n      startOffset\n      endOffset\n    }\n    tiers {\n      __typename\n      id\n      categoryId\n      title\n      subtitle\n      price\n      displayOrder\n    }\n  }\n}\n\nfragment MetaDataDetails on EventWithTimeslotsAndMeta {\n  __typename\n  meta {\n    __typename\n    value\n    metakey\n  }\n}\n\nfragment TimeslotsDetails on EventWithTimeslotsAndMeta {\n  __typename\n  timeslots {\n    __typename\n    ...TimeslotDetails\n  }\n}\n\nfragment TimeslotDetails on Timeslot {\n  __typename\n  id\n  startTime\n  soldOut\n  endTime\n  capacity {\n    __typename\n    total\n    oversell\n    remaining\n  }\n}',
+    }
+
+    response = requests.post('https://tickets.meowwolf.com/api/graphql/', cookies=cookies, headers=headers, json=json_data)
+    df = pd.DataFrame(response.json()['data']['nonRecurringEvents']['events'])
+    df['Date'] = pd.json_normalize(pd.json_normalize(df.timeslots)[0])['startTime']
+    df['Link'] = df.slug.map(lambda x : f"https://tickets.meowwolf.com/events/denver/{x}/")
+    df['Venue'] = 'Meow Wolf Denver'
+    df = df[['title','Date','Link','Venue']]
+    df['FiltArtist'] = df.title.map(lambda x : [x])
+    
+    return df
 
 def larimer_scrape():
     cookies = {
@@ -715,6 +855,8 @@ def mish_scrape():
     df['FiltArtist'] = df['Artist'].map(splitArtists)
     
     return df
+
+
 
 def missionScrape():
 
@@ -967,8 +1109,82 @@ def marquisScrape():
     
     return df
 
+def temple_scrape():
+    
+    import datetime
+    
+    def temple_date_fmt(date):
+
+        if int(date) <10:
+            return '0' + str(date)
+        else:
+            return date
+
+    from dateutil.relativedelta import relativedelta
+    today = datetime.datetime.today()
+    month_count = 0
+
+    all_dfs = []
+    while month_count < 6:
+        try:
+            day = today + relativedelta(months=month_count)
+            m_d = str(day.year)[2:] + str(temple_date_fmt(day.month)) + '01'
+            resp = requests.get(f'https://uvtix.com/api/v3/ve187917rm0fd{m_d}/calevents.json')
+            month_count += 1
+            shows = []
+            for json in resp.json()['weeks']:
+                shows1 = json[-1]
+                shows.append(shows1)
+                shows2 = json[-2]
+                shows.append(shows2)
+
+            li = [x['events'] for x in shows]
+
+            dfs = []
+            for item in li:
+                try:
+                    dfs.append(pd.DataFrame(item))
+                except:
+                    pass
+
+            df2 = pd.concat(dfs)
+            all_dfs.append(df2)
+        except:
+            break
+
+
+    df = pd.concat(all_dfs)
+    df = df[['name','date','ticketsurl']]
+
+    def splitArtists(row):
+        return [x.strip() for x in re.split('Presented by|at|Afterparty|with|&', row) if x not in ['',' ']]
+    df['FiltArtist'] = df['name'].map(splitArtists)
+
+    df.columns = ['Artist','Date','Link','FiltArtist']
+    df['Venue'] = 'Temple'
+    df = df[['Artist','Date','Link','Venue','FiltArtist']]
+    
+    return df
+
 
 def nightOutScrape():
+    
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+
+        # Create a new instance of the chrome web driver
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get("https://coclubs.com/events")
+
+
+        # Access requests via the `requests` attribute
+        for request in driver.requests:
+            if "https://api.ticketsauce.com/v2/oauth/token" in request.url:
+            # here you need to filter the name of the url request you want
+            # if "name_of_the_url_in_header" in request.url
+                token = requests.get(request.url).json()['access_token']
+                
         headers = {
             'authority': 'api.ticketsauce.com',
             'sec-ch-ua': '" Not;A Brand";v="99", "Google Chrome";v="97", "Chromium";v="97"',
@@ -985,12 +1201,12 @@ def nightOutScrape():
         }
 
         params = (
-            ('access_token', '4c430b032f9990fc657ab75481e7b6927ecbe1aa'),
+            ('access_token', f'{token}'),
             ('active_only', 'true'),
             ('privacy_type', 'public'),
             ('start_after', ''),
         )
-
+        driver.quit()
         response = requests.get('https://api.ticketsauce.com/v2/events', headers=headers, params=params)
 
         concerts = pd.DataFrame([x['Event'] for x in response.json()])
@@ -1025,7 +1241,7 @@ def nightOutScrape():
         return concerts
 
 
-functions = ['mish_scrape()','larimer_scrape()','marquisScrape()','fillmoreScrape()','cervantes_scrape()','bellyScrape()','redRocksScrape()','nightOutScrape()','missionScrape()','blue_bird_scrape()','ogden_scrape()','first_bank_scrape()','gothic_scrape()','summitScrape()']
+functions = ['meow_scrape()','black_box_scrape()','temple_scrape()','mish_scrape()','larimer_scrape()','marquisScrape()','fillmoreScrape()','cervantes_scrape()','bellyScrape()','redRocksScrape()','nightOutScrape()','missionScrape()','blue_bird_scrape()','ogden_scrape()','first_bank_scrape()','gothic_scrape()','summitScrape()']
 
 
 result = []
@@ -1103,9 +1319,13 @@ def findMatches(user):
     matches.columns = ['Artist','Date','Venue','Caused_By','Link']
     matches = matches.drop_duplicates()
     matches['Date'] = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
+    matches.Date = matches.Date.map(lambda x : str(x).split("+")[0])
+    matches['Date'] = pd.to_datetime(matches['Date'])
     
     matches = matches.groupby(['Artist', 'Date','Venue','Link']).agg({'Caused_By': lambda x: ', '.join(x)}).sort_values('Date').reset_index()
 
+    
+    
     def nameLink(row):
         if row.Link == 'No Link at this time, sorry!':
             return row.Artist
@@ -1139,7 +1359,7 @@ def findMatches(user):
     matches.Date = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
     matches = matches.reset_index()
     matches['index'] = matches['index'].map(lambda x : int(x)+1)
-
+    
     matches['Date'] = pd.to_datetime(matches['Date'])
     matches.loc[matches['Date'] > pd.Timestamp(datetime.now()), 'Date']
 

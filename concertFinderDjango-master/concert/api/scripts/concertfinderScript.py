@@ -22,7 +22,7 @@ from datetime import datetime
 nltk.download('averaged_perceptron_tagger')
 
 tagger = pycrfsuite.Tagger()
-tagger.open(r'/Users/john.schlafly/Documents/concert-finder/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
+tagger.open(r'/home/ubuntu/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
 
 proxies = {
 }
@@ -1139,8 +1139,6 @@ def findMatches(user):
     matches.Date = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
     matches.columns = ['Event','Date','Venue','LikedArtists']
     jsonMatches = matches.to_dict('records')
-
-    print(jsonMatches)
 
 
     return [jsonMatches]

@@ -51,5 +51,5 @@ class ArticleView(APIView):
         data = runScript(user)
         # the many param informs the serializer that it will be serializing more than a single article.
         serializer = ArticleSerializer(data, many=True)
-        resp = {'Matches' : serializer.data}
+        resp =  serializer.data
         return Response(resp)
