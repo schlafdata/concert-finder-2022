@@ -21,7 +21,7 @@ class HomeView(TemplateView):
         try:
             import time
             start_time = time.time()
-            result = concertfinder_test2.findMatches(text)
+            result = concertfinder_test2.findMatches(text, 'host')
             matches = result[0]
             counts = result[1]
             pd.set_option('max_colwidth', -1)
