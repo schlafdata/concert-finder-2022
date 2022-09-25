@@ -6,7 +6,7 @@ from django.shortcuts import render, get_object_or_404
 from django.http import Http404,HttpResponse,HttpResponseRedirect
 import requests
 from bs4 import BeautifulSoup
-from api.scripts import concertfinderScript
+from home.scripts import concertfinder_test2
 import pandas as pd
 
 from rest_framework.response import Response
@@ -20,7 +20,7 @@ def runScript(username):
     import time
     start_time = time.time()
 
-    result = concertfinderScript.findMatches(username)
+    result = concertfinder_test2.findMatches(username, 'api')
     matches = result[0]
     # likes = result[1]
     # counts = result[1]
@@ -51,5 +51,5 @@ class ArticleView(APIView):
         data = runScript(user)
         # the many param informs the serializer that it will be serializing more than a single article.
         serializer = ArticleSerializer(data, many=True)
-        resp = {'Matches' : serializer.data}
+        resp = serializer.data
         return Response(resp)
