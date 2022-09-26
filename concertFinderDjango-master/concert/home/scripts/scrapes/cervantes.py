@@ -6,7 +6,7 @@ from datetime import datetime
 
 tagger = pycrfsuite.Tagger()
 # tagger.open('./crf.model')
-tagger.open('/Users/john.schlafly/Documents/concert-finder/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
+tagger.open('/home/ubuntu/concert-finder-2022/concertFinderDjango-master/concert/home/scripts/crf.model')
 
 
 def cervantes_scrape():

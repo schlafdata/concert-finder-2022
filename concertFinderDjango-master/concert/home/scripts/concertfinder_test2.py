@@ -191,7 +191,7 @@ def findMatches(user, source):
             matches = matches[['Artist','Date','Venue','Link','img_url','Caused_By','song_url']]
             matches.columns = ['Event','Date','Venue','ticketLink','img_url','LikedArtists','song_url']
             matches.Date = matches['Date'].map(lambda x : dateutil.parser.parse(str(x)))
-            matches.Date = pd.to_datetime(matches.Date)
+            matches.Date = matches['Date'].map(lambda x : str(x).split()[0])
             matches.columns = ['Event','Date','Venue','Link','img_url','LikedArtists','song_url']
             jsonMatches = matches.to_dict('records')
             return [jsonMatches]
