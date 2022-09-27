@@ -1,0 +1,14 @@
+asgiref==3.5.2
+Django==4.1.1
+django-debug-toolbar==2.2.1
+django-environ==0.4.5
+pytz==2019.3
+sqlparse==0.3.1
+psycopg2-binary
+djangorestframework
+python-crfsuite
+selenium
+selenium-wire
+bs4
+nltk
+pandas
